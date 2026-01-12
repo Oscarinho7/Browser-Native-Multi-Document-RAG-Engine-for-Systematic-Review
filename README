@@ -109,7 +109,7 @@ serve .
    - **Llama 3.2 3B** - Better quality, needs ~4GB VRAM
    - **SmolLM2 1.7B** - Good balance
    - **Qwen 2.5 1.5B** - Good for multilingual docs
-3. Click **"🚀 Load Selected Model"**
+3. Click **" Load Selected Model"**
 
 ### Step 2: Upload Documents
 
