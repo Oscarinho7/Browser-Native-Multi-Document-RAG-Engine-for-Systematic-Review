@@ -1,1 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
 
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synapse - Local RAG</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- PDF.js CDN (for text extraction) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(229, 231, 235, 0.5);
+            z-index: 10;
+        }
+
+        textarea {
+            resize: none;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .animate-fade-in {
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .dot-flashing {
+            position: relative;
+            width: 10px;
+            height: 10px;
+            border-radius: 5px;
+            background-color: #94a3b8;
+            color: #94a3b8;
+            animation: dotFlashing 1s infinite alternate;
+            animation-delay: 0s;
+        }
+
+        .dot-flashing::before,
+        .dot-flashing::after {
+            content: '';
+            display: inline-block;
+            position: absolute;
+            top: 0;
+        }
+
+        .dot-flashing::before {
+            left: -15px;
+            animation-delay: 0.3s;
+        }
+
+        .dot-flashing::after {
+            left: 15px;
+            animation-delay: 0.6s;
+        }
+
+        @keyframes dotFlashing {
+            0% {
+                background-color: #94a3b8;
+            }
+
+            50%,
+            100% {
+                background-color: #3b82f6;
+            }
+        }
+    </style>
+</head>
+
+<body class="bg-slate-50 text-slate-800 h-screen flex overflow-hidden antialiased">
+
+    <!-- SIDEBAR -->
+    <aside class="w-full sm:w-80 bg-white border-r border-slate-200 flex flex-col shadow-lg z-20">
+        <div class="p-4 border-b border-slate-100 flex justify-between items-center">
+            <div>
+                <h1 class="font-bold text-2xl text-indigo-700 flex items-center gap-2">
+                    <span>🧠</span> Synapse
+                </h1>
+                <p class="text-xs text-slate-400 mt-1">Local RAG Research & Analysis</p>
+            </div>
+            <button id="clear-btn" title="Clear Chat" class="text-slate-400 hover:text-red-500 transition-colors p-1">
+                🗑️
+            </button>
+        </div>
+
+        <div id="drop-zone"
+            class="m-4 p-6 border-2 border-dashed border-indigo-300/80 rounded-xl bg-indigo-50/50 text-center transition-all hover:bg-indigo-100 hover:border-indigo-500 cursor-pointer group">
+            <div class="text-3xl mb-2 text-indigo-500 group-hover:scale-110 transition-transform">📄</div>
+            <p class="text-sm font-semibold text-indigo-900">Drag & Drop PDFs</p>
+            <input type="file" id="file-input" accept=".pdf" multiple class="hidden">
+        </div>
+
+        <div class="flex-1 overflow-y-auto px-4 pb-4">
+            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Vector Database</h3>
+            <div id="sources-list" class="space-y-2">
+                <div class="p-3 bg-slate-100 border border-slate-200 rounded-lg text-sm text-slate-600 truncate">
+                    No documents indexed.
+                </div>
+            </div>
+        </div>
+
+        <div class="p-4 bg-slate-50 border-t border-slate-200">
+            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">System Controls</h3>
+
+            <div class="mb-3">
+                <label class="flex justify-between text-xs font-medium text-slate-600 mb-1">
+                    <span>Temperature</span>
+                    <span id="temp-val" class="text-slate-400">0.2</span>
+                </label>
+                <input type="range" id="temp-slider" min="0" max="1" step="0.1" value="0.2"
+                    class="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+            </div>
+
+            <div class="mb-3">
+                <label class="block text-xs font-medium text-slate-600 mb-1">System Prompt</label>
+                <textarea id="system-prompt" rows="3"
+                    class="w-full text-xs p-2 border border-slate-200 rounded bg-white text-slate-600 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+                    placeholder="Enter system instructions...">Answer using ONLY the document text provided. Never make up information.</textarea>
+            </div>
+
+            <button id="lit-review-btn"
+                class="w-full py-2 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded border border-indigo-200 transition-colors flex items-center justify-center gap-2">
+                <span>📚</span> Generate Lit Review
+            </button>
+        </div>
+
+        <div class="p-4 bg-slate-100 text-xs border-t border-slate-200">
+            <div class="flex justify-between mb-1 font-medium">
+                <span>System Status:</span>
+                <span id="load-label" class="text-yellow-600">Initializing...</span>
+            </div>
+            <div class="w-full bg-slate-300 rounded-full h-2">
+                <div id="progress-bar" class="bg-indigo-500 h-2 rounded-full transition-all duration-300"
+                    style="width: 0%"></div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- MAIN AREA -->
+    <main class="flex-1 flex flex-col relative">
+        <div id="chat-container" class="flex-1 overflow-y-auto p-6 space-y-8 pb-32 scroll-smooth">
+            <div class="flex gap-4 max-w-4xl mx-auto animate-fade-in">
+                <div
+                    class="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-white text-sm font-bold flex-shrink-0 shadow-lg">
+                    AI</div>
+                <div
+                    class="bg-white p-4 rounded-2xl rounded-tl-none shadow-md border border-slate-100 text-slate-700 leading-relaxed max-w-full lg:max-w-2xl">
+                    System Online. I am ready to embed your documents and perform semantic retrieval.
+                </div>
+            </div>
+        </div>
+
+        <div class="absolute bottom-0 left-0 right-0 p-4 pt-12">
+            <div class="max-w-4xl mx-auto glass-panel rounded-2xl shadow-xl p-3 flex items-end gap-3">
+                <textarea id="user-input" rows="1"
+                    class="flex-1 bg-transparent border-0 focus:ring-0 p-2 text-slate-700 placeholder-slate-400 resize-none max-h-40 overflow-y-auto"
+                    placeholder="Ask a question about your documents..."></textarea>
+                <button id="send-btn"
+                    class="p-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-colors shadow-lg shadow-indigo-500/50 flex-shrink-0">
+                    ➔
+                </button>
+                <button id="stop-btn"
+                    class="hidden p-3 bg-red-500 hover:bg-red-600 text-white rounded-xl transition-colors shadow-lg shadow-red-500/50 flex-shrink-0">
+                    🛑
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- RIGHT SIDEBAR - Model Settings -->
+    <aside class="w-full sm:w-72 bg-white border-l border-slate-200 flex flex-col shadow-lg z-20">
+        <div class="p-4 border-b border-slate-100">
+            <h2 class="font-bold text-lg text-slate-700 flex items-center gap-2">
+                <span>⚙️</span> Model Settings
+            </h2>
+            <p class="text-xs text-slate-400 mt-1">Configure LLM model</p>
+        </div>
+
+        <div class="p-4 space-y-4">
+            <div>
+                <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">LLM Model</label>
+                <select id="model-select"
+                    class="w-full text-sm p-2 border border-slate-200 rounded bg-white text-slate-700 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                    <option value="Llama-3.2-1B-Instruct-q4f32_1-MLC">Llama 3.2 1B (Small, Fast)</option>
+                    <option value="Llama-3.2-3B-Instruct-q4f16_1-MLC">Llama 3.2 3B (Better, Slower)</option>
+                    <option value="SmolLM2-1.7B-Instruct-q4f16_1-MLC">SmolLM2 1.7B (Good Balance)</option>
+                    <option value="Qwen2.5-1.5B-Instruct-q4f16_1-MLC">Qwen 2.5 1.5B (Multilingual)</option>
+                </select>
+            </div>
+
+            <div class="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <p class="text-xs text-amber-800">
+                    <strong>Note:</strong> Larger models need more VRAM. If loading fails, try a smaller model.
+                </p>
+            </div>
+
+            <button id="load-model-btn"
+                class="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-lg transition-colors shadow-lg shadow-indigo-500/30 flex items-center justify-center gap-2">
+                <span>🚀</span> Load Selected Model
+            </button>
+
+            <div id="model-status" class="text-xs text-slate-500 text-center">
+                Select a model and click Load
+            </div>
+        </div>
+
+        <div class="flex-1"></div>
+
+        <div class="p-4 bg-slate-50 border-t border-slate-200">
+            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Current Model</h3>
+            <div id="current-model-display" class="text-sm font-medium text-indigo-600 truncate">
+                Not loaded
+            </div>
+        </div>
+    </aside>
+
+    <script type="module">
+
+        import * as webllm from "https://esm.run/@mlc-ai/web-llm";
+        import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2";
+
+        env.allowLocalModels = false;
+
+        const state = {
+            llmEngine: null,
+            embedder: null,
+            vectorStore: [],
+            chatHistory: [],
+            modelId: "Llama-3.2-1B-Instruct-q4f32_1-MLC",
+            embeddingModel: "Xenova/all-MiniLM-L6-v2"
+        };
+
+        const ui = {
+            sendBtn: document.getElementById('send-btn'),
+            stopBtn: document.getElementById('stop-btn'),
+            clearBtn: document.getElementById('clear-btn'),
+            input: document.getElementById('user-input'),
+            chat: document.getElementById('chat-container'),
+            dropZone: document.getElementById('drop-zone'),
+            fileInput: document.getElementById('file-input'),
+            sourcesList: document.getElementById('sources-list'),
+            progressBar: document.getElementById('progress-bar'),
+            loadLabel: document.getElementById('load-label'),
+            tempSlider: document.getElementById('temp-slider'),
+            tempVal: document.getElementById('temp-val'),
+            systemPrompt: document.getElementById('system-prompt'),
+            litReviewBtn: document.getElementById('lit-review-btn'),
+            modelSelect: document.getElementById('model-select'),
+            loadModelBtn: document.getElementById('load-model-btn'),
+            modelStatus: document.getElementById('model-status'),
+            currentModelDisplay: document.getElementById('current-model-display'),
+        };
+
+        // --- INITIALIZATION ---
+        async function initSystem() {
+            ui.sendBtn.disabled = true;
+            ui.litReviewBtn.disabled = true;
+            ui.litReviewBtn.classList.add('opacity-50', 'cursor-not-allowed');
+
+            const updateProgress = (text, percent) => {
+                ui.loadLabel.innerText = text;
+                ui.progressBar.style.width = `${percent}%`;
+            };
+
+            try {
+                updateProgress("Loading Embedding Model (MiniLM)...", 20);
+                state.embedder = await pipeline('feature-extraction', state.embeddingModel, {
+                    quantized: true
+                });
+
+                updateProgress("Embedding Ready - Select LLM Model", 40);
+                ui.loadLabel.classList.add('text-blue-600');
+                ui.modelStatus.innerText = "Embedding model loaded. Now select and load an LLM.";
+
+            } catch (err) {
+                console.error("Initialization Error:", err);
+                ui.loadLabel.innerText = "Error: Check Console";
+                ui.loadLabel.classList.add('text-red-600');
+            }
+        }
+
+        // --- LOAD LLM MODEL ---
+        async function loadLLM() {
+            const selectedModel = ui.modelSelect.value;
+            state.modelId = selectedModel;
+
+            ui.loadModelBtn.disabled = true;
+            ui.loadModelBtn.innerText = "⏳ Loading...";
+            ui.modelStatus.innerText = "Downloading model files...";
+            ui.loadLabel.innerText = "Loading LLM...";
+            ui.loadLabel.classList.remove('text-green-600', 'text-blue-600');
+            ui.loadLabel.classList.add('text-yellow-600');
+
+            try {
+                // Unload previous model if exists
+                if (state.llmEngine) {
+                    state.llmEngine = null;
+                }
+
+                state.llmEngine = await webllm.CreateMLCEngine(
+                    state.modelId,
+                    {
+                        initProgressCallback: (report) => {
+                            ui.progressBar.style.width = `${40 + report.progress * 60}%`;
+                            ui.modelStatus.innerText = report.text;
+                        }
+                    }
+                );
+
+                ui.progressBar.style.width = "100%";
+                ui.loadLabel.innerText = "System Ready";
+                ui.loadLabel.classList.remove('text-yellow-600');
+                ui.loadLabel.classList.add('text-green-600');
+                ui.sendBtn.disabled = false;
+                ui.litReviewBtn.disabled = false;
+                ui.litReviewBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                ui.modelStatus.innerText = "Model loaded successfully!";
+                ui.currentModelDisplay.innerText = selectedModel.split('-q')[0];
+                ui.loadModelBtn.innerText = "🚀 Load Selected Model";
+                ui.loadModelBtn.disabled = false;
+
+            } catch (err) {
+                console.error("Model Load Error:", err);
+                ui.modelStatus.innerText = "Error: " + err.message;
+                ui.loadLabel.innerText = "Model Load Failed";
+                ui.loadLabel.classList.add('text-red-600');
+                ui.loadModelBtn.innerText = "🚀 Load Selected Model";
+                ui.loadModelBtn.disabled = false;
+            }
+        }
+
+        // --- COSINE SIMILARITY ---
+        function cosineSimilarity(vecA, vecB) {
+            let dotProduct = 0;
+            let normA = 0;
+            let normB = 0;
+
+            for (let i = 0; i < vecA.length; i++) {
+                dotProduct += vecA[i] * vecB[i];
+                normA += vecA[i] * vecA[i];
+                normB += vecB[i] * vecB[i];
+            }
+
+            if (normA === 0 || normB === 0) return 0;
+            return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+        }
+
+        // --- CHUNKING ---
+        function chunkText(text, chunkSize = 400, overlap = 80) {
+            const chunks = [];
+            let start = 0;
+
+            while (start < text.length) {
+                const end = start + chunkSize;
+                let chunk = text.slice(start, end);
+
+                if (end < text.length) {
+                    const lastPeriod = chunk.lastIndexOf('.');
+                    if (lastPeriod > -1 && lastPeriod > chunkSize * 0.5) {
+                        chunk = chunk.slice(0, lastPeriod + 1);
+                        start += (lastPeriod + 1) - overlap;
+                    } else {
+                        const lastSpace = chunk.lastIndexOf(' ');
+                        if (lastSpace > -1) {
+                            chunk = chunk.slice(0, lastSpace);
+                            start += lastSpace - overlap;
+                        } else {
+                            start += chunkSize - overlap;
+                        }
+                    }
+                } else {
+                    start += chunkSize;
+                }
+
+                chunks.push(chunk.trim());
+            }
+            return chunks;
+        }
+
+        // --- DOCUMENT PROCESSING ---
+        async function processFiles(files) {
+            ui.sourcesList.innerHTML = '';
+            addMessage("system", `Processing ${files.length} documents...`);
+
+            for (const file of files) {
+                const buffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+                let fullText = "";
+
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    fullText += textContent.items.map(item => item.str).join(' ') + " ";
+                }
+
+                const textChunks = chunkText(fullText);
+
+                const embeddingPromises = textChunks.map(async (chunk, i) => {
+                    const output = await state.embedder(chunk, { pooling: 'mean', normalize: true });
+                    const embedding = Array.from(output.data);
+
+                    return {
+                        id: `${file.name}_${i}`,
+                        text: chunk,
+                        vector: embedding,
+                        source: file.name
+                    };
+                });
+
+                const newVectors = await Promise.all(embeddingPromises);
+                state.vectorStore.push(...newVectors);
+
+                const item = document.createElement('div');
+                item.className = "p-2 bg-indigo-50 border border-indigo-200 rounded text-xs truncate";
+                item.innerText = `${file.name} (${textChunks.length} chunks)`;
+                ui.sourcesList.appendChild(item);
+            }
+
+            addMessage("system", `Indexing complete. ${state.vectorStore.length} vectors stored.`);
+        }
+
+        // --- CHAT HANDLER ---
+        async function handleChat() {
+            const query = ui.input.value.trim();
+            if (!query) return;
+
+            addMessage("user", query);
+            ui.input.value = "";
+            ui.sendBtn.disabled = true;
+
+            if (!state.llmEngine) {
+                addMessage("system", "Error: LLM not initialized.");
+                ui.sendBtn.disabled = false;
+                return;
+            }
+
+            let context = "";
+
+            // RAG RETRIEVAL
+            if (state.vectorStore.length > 0) {
+                const queryOutput = await state.embedder(query, { pooling: 'mean', normalize: true });
+                const queryVector = Array.from(queryOutput.data);
+
+                const scoredChunks = state.vectorStore.map(chunk => ({
+                    ...chunk,
+                    score: cosineSimilarity(queryVector, chunk.vector)
+                }));
+
+                scoredChunks.sort((a, b) => b.score - a.score);
+
+                // Get top 4 chunks only (smaller context for 1B model)
+                const topChunks = scoredChunks.slice(0, 4);
+
+                context = topChunks.map((c, i) => `[Document ${i + 1}]: ${c.text}`).join("\n\n");
+
+                console.log("=== RAG DEBUG ===");
+                console.log("Total chunks:", state.vectorStore.length);
+                console.log("Top scores:", topChunks.map(c => c.score.toFixed(3)));
+                console.log("Context chars:", context.length);
+            }
+
+            // PROMPT - Extremely simple for 1B model
+            const temperature = parseFloat(ui.tempSlider.value);
+
+            let userPrompt;
+            if (context) {
+                userPrompt = `Read this text from a PDF:
+
+${context}
+
+Question: ${query}
+
+Answer based on the text above:`;
+            } else {
+                userPrompt = `No PDF uploaded yet. User asked: ${query}`;
+            }
+
+            const messages = [
+                { role: "system", content: "You summarize and answer questions about documents. Use only the provided text." },
+                { role: "user", content: userPrompt }
+            ];
+
+            console.log("=== PROMPT ===");
+            console.log("Prompt length:", userPrompt.length);
+
+            const responseDiv = addMessage("ai", "...", true);
+
+            ui.sendBtn.classList.add('hidden');
+            ui.stopBtn.classList.remove('hidden');
+
+            try {
+                const stream = await state.llmEngine.chat.completions.create({
+                    messages,
+                    temperature: temperature,
+                    stream: true
+                });
+                let fullResponse = "";
+                responseDiv.innerHTML = "";
+
+                for await (const chunk of stream) {
+                    const delta = chunk.choices[0]?.delta?.content || "";
+                    fullResponse += delta;
+                    responseDiv.innerText = fullResponse;
+
+                    const isAtBottom = (ui.chat.scrollHeight - ui.chat.scrollTop) <= (ui.chat.clientHeight + 100);
+                    if (isAtBottom) {
+                        ui.chat.scrollTop = ui.chat.scrollHeight;
+                    }
+                }
+
+                state.chatHistory.push({ role: "user", content: query });
+                state.chatHistory.push({ role: "assistant", content: fullResponse });
+
+            } catch (err) {
+                if (err.message?.includes("aborted") || err.name === "AbortError") {
+                    responseDiv.innerText += " [Stopped]";
+                } else {
+                    console.error(err);
+                    responseDiv.innerText = "Error generating response.";
+                }
+            } finally {
+                ui.sendBtn.disabled = false;
+                ui.sendBtn.classList.remove('hidden');
+                ui.stopBtn.classList.add('hidden');
+            }
+        }
+
+        // --- UTILS ---
+        function addMessage(role, text, loading = false) {
+            const div = document.createElement('div');
+            div.className = "flex gap-4 max-w-4xl mx-auto animate-fade-in";
+            div.innerHTML = `
+                <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${role === 'user' ? 'bg-slate-700 text-white' : 'bg-indigo-500 text-white'}">${role === 'user' ? 'U' : 'AI'}</div>
+                <div class="p-4 rounded-2xl border ${role === 'user' ? 'bg-indigo-50 border-indigo-100' : 'bg-white border-slate-100'} text-slate-700">
+                    ${loading ? '<div class="dot-flashing"></div>' : text}
+                </div>
+            `;
+            ui.chat.appendChild(div);
+            ui.chat.scrollTop = ui.chat.scrollHeight;
+            return div.querySelector('div:last-child');
+        }
+
+        // Event Listeners
+        ui.sendBtn.addEventListener('click', handleChat);
+        ui.stopBtn.addEventListener('click', () => {
+            if (state.llmEngine) {
+                state.llmEngine.interruptGenerate();
+            }
+        });
+
+        ui.clearBtn.addEventListener('click', () => {
+            state.chatHistory = [];
+            ui.chat.innerHTML = `
+            <div class="flex gap-4 max-w-4xl mx-auto animate-fade-in">
+                <div class="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-white text-sm font-bold flex-shrink-0 shadow-lg">AI</div>
+                <div class="bg-white p-4 rounded-2xl rounded-tl-none shadow-md border border-slate-100 text-slate-700 leading-relaxed max-w-full lg:max-w-2xl">
+                    Chat cleared. Ready for new questions.
+                </div>
+            </div>`;
+        });
+
+        ui.input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) handleChat();
+        });
+        ui.dropZone.addEventListener('click', () => ui.fileInput.click());
+        ui.fileInput.addEventListener('change', (e) => processFiles(Array.from(e.target.files)));
+        ui.dropZone.addEventListener('dragover', (e) => { e.preventDefault(); ui.dropZone.classList.add('bg-indigo-100'); });
+        ui.dropZone.addEventListener('dragleave', (e) => { e.preventDefault(); ui.dropZone.classList.remove('bg-indigo-100'); });
+        ui.dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            ui.dropZone.classList.remove('bg-indigo-100');
+            if (e.dataTransfer.files.length > 0) processFiles(Array.from(e.dataTransfer.files));
+        });
+
+        ui.tempSlider.addEventListener('input', (e) => ui.tempVal.innerText = e.target.value);
+        ui.litReviewBtn.addEventListener('click', () => {
+            ui.input.value = "Summarize the main points of this document.";
+            handleChat();
+        });
+        ui.loadModelBtn.addEventListener('click', loadLLM);
+
+        window.addEventListener('load', initSystem);
+
+    </script>
+</body>
+
+</html>
