@@ -1,1 +1,168 @@
+#  Synapse - Local RAG Research Assistant
+
+> **A privacy-first, fully browser-based AI research assistant that runs entirely on your device.**
+
+![Synapse Interface](screenshot.png)
+
+---
+
+## What is Synapse?
+
+Synapse is a **Retrieval Augmented Generation (RAG)** system that lets you chat with your PDF documents using AI. Unlike cloud-based solutions like ChatGPT or Claude, Synapse runs **100% locally in your browser** - your documents never leave your computer.
+
+### Privacy-First Architecture
+
+| Traditional AI | Synapse (Local AI) |
+|---------------|-------------------|
+| Documents uploaded to cloud servers | Documents stay on YOUR device |
+| Data may be used for training | Zero data collection |
+| Requires internet connection | Works offline after model loads |
+| Privacy policies you can't verify | Complete transparency |
+
+**Your research papers, confidential documents, and sensitive data remain private.**
+
+---
+
+## Tech Stack
+
+| Technology | Purpose |
+|-----------|---------|
+| **[WebLLM](https://webllm.mlc.ai/)** | Runs LLMs directly in browser via WebGPU |
+| **[Transformers.js](https://huggingface.co/docs/transformers.js/)** | Generates text embeddings for semantic search |
+| **[PDF.js](https://mozilla.github.io/pdf.js/)** | Extracts text from PDF documents |
+| **[Tailwind CSS](https://tailwindcss.com/)** | Modern, responsive UI styling |
+| **Vanilla JavaScript** | No framework dependencies, pure ES modules |
+
+### How the RAG Pipeline Works
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   PDF.js    │────▶│  Chunking   │────▶│ Transformers│
+│  Extraction │     │  (400 char) │     │  Embedding  │
+└─────────────┘     └─────────────┘     └─────────────┘
+                                              │
+                                              ▼
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   WebLLM    │◀────│   Context   │◀────│   Vector    │
+│  Response   │     │  Retrieval  │     │    Store    │
+└─────────────┘     └─────────────┘     └─────────────┘
+```
+
+1. **Extract** - PDF.js pulls raw text from uploaded PDFs
+2. **Chunk** - Text is split into 400-character overlapping segments
+3. **Embed** - Transformers.js creates 384-dimensional vectors
+4. **Store** - Vectors are stored in a client-side array (no database needed)
+5. **Search** - User queries are embedded and matched via cosine similarity
+6. **Generate** - Top matching chunks are sent to WebLLM for response
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- **Modern Browser** with WebGPU support (Chrome 113+, Edge 113+)
+- **GPU** with 4GB+ VRAM recommended (works with less, but slower)
+- **Local Server** (required due to ES Modules and CORS)
+
+### Option 1: Python (Recommended)
+
+```bash
+# Clone or download this repository
+cd LLM_PROJECT
+
+# Start a local server
+python -m http.server 8000
+
+# Open in browser
+# Navigate to: http://localhost:8000
+```
+
+### Option 2: VS Code Live Server
+
+1. Install the **Live Server** extension in VS Code
+2. Open the project folder
+3. Right-click `index.html` → **Open with Live Server**
+
+### Option 3: Node.js
+
+```bash
+# Install a simple server
+npm install -g serve
+
+# Run it
+cd LLM_PROJECT
+serve .
+
+# Open the URL shown in terminal
+```
+
+---
+
+## Usage Guide
+
+### Step 1: Load the Models
+
+1. Wait for the embedding model to load automatically (~20 seconds)
+2. Select an LLM from the **right sidebar dropdown**:
+   - **Llama 3.2 1B** - Fast, lower VRAM (~2GB)
+   - **Llama 3.2 3B** - Better quality, needs ~4GB VRAM
+   - **SmolLM2 1.7B** - Good balance
+   - **Qwen 2.5 1.5B** - Good for multilingual docs
+3. Click **"🚀 Load Selected Model"**
+
+### Step 2: Upload Documents
+
+1. Drag & drop PDF files onto the left sidebar
+2. Wait for processing (you'll see chunk count appear)
+3. Multiple PDFs can be indexed simultaneously
+
+### Step 3: Ask Questions
+
+- Type your question in the chat input
+- Press Enter or click ➔
+- The AI will answer based on your document content
+
+### Step 4: Generate Literature Review
+
+- Click **" Generate Lit Review"** for an automated summary
+- Adjust **Temperature** slider for creativity (0.2 = factual, 0.8 = creative)
+
+---
+
+## ⚙️ System Requirements
+
+| Component | Minimum | Recommended |
+|-----------|---------|-------------|
+| Browser | Chrome 113+ | Chrome 120+ |
+| GPU | Integrated | Discrete (4GB VRAM) |
+| RAM | 8GB | 16GB |
+| Storage | 2GB free | 5GB free (for model cache) |
+
+### Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| "WebGPU not supported" | Update Chrome/Edge to latest version |
+| Model loading fails | Try a smaller model (1B instead of 3B) |
+| Slow performance | Close other GPU-intensive tabs/apps |
+| SharedArrayBuffer error | Use a proper local server (not file://) |
+
+---
+
+## Project Structure
+
+```
+LLM_PROJECT/
+├── index.html      # Main application (single-page app)
+├── chunker.js      # Text chunking utilities
+├── README.md       # This file
+└── PROJECT.md      # Project requirements document
+```
+
+## Acknowledgments
+
+- [MLC-AI](https://mlc.ai/) for WebLLM
+- [Hugging Face](https://huggingface.co/) for Transformers.js
+- [Mozilla](https://mozilla.org/) for PDF.js
 
