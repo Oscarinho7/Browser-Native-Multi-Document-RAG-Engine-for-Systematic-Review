@@ -2,7 +2,7 @@
 
 > **A privacy-first, fully browser-based AI research assistant that runs entirely on your device.**
 
-![Synapse Interface](screenshot.png)
+![Synapse Interface](Synapse.png)
 
 ---
 
